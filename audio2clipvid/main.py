@@ -10,6 +10,7 @@ def generate_video(
         audio_path: str,
         llm_function: Callable[[str], str],
         embeddings_folder: str,
+        videos_folder: str,
         output_video_path: str,
         device: str = None
 ):
@@ -49,7 +50,7 @@ def generate_video(
     #    Por simplicidad, usaremos la parte de `word_timestamps` que corresponde a cada fragmento.
     if not ClipVidSearcher:
         raise ImportError("ClipVidSearcher no está disponible. Instala clipvid o usa tu propio buscador.")
-    searcher = ClipVidSearcher(embeddings_folder=embeddings_folder, device=device)
+    searcher = ClipVidSearcher(embeddings_folder=embeddings_folder, videos_folder=videos_folder, device=device)
 
     # Emparejar cada fragmento con su rango de tiempo en el audio.
     # Por ejemplo, splitted_fragments[i] -> (start_time, end_time)  -> short_descriptions[i]

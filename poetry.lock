@@ -99,6 +99,7 @@ files = [
 [package.dependencies]
 aiohappyeyeballs = ">=2.3.0"
 aiosignal = ">=1.1.2"
+async-timeout = {version = ">=4.0,<6.0", markers = "python_version < \"3.11\""}
 attrs = ">=17.3.0"
 frozenlist = ">=1.1.1"
 multidict = ">=4.5,<7.0"
@@ -169,6 +170,17 @@ typing-extensions = "*"
 
 [package.extras]
 all = ["librosa", "scipy"]
+
+[[package]]
+name = "async-timeout"
+version = "5.0.1"
+description = "Timeout context manager for asyncio programs"
+optional = false
+python-versions = ">=3.8"
+files = [
+    {file = "async_timeout-5.0.1-py3-none-any.whl", hash = "sha256:39e3809566ff85354557ec2398b55e096c8364bacac9405a7a1fa429e77fe76c"},
+    {file = "async_timeout-5.0.1.tar.gz", hash = "sha256:d9321a7a3d5a6a5e187e824d2fa0793ce379a202935782d555d6e9d2735677d3"},
+]
 
 [[package]]
 name = "attrs"
@@ -493,7 +505,7 @@ name = "clipvid"
 version = "0.1.0"
 description = "Proyecto que indexa videos usando CLIP y permite búsquedas en los embeddings generados."
 optional = false
-python-versions = "^3.11"
+python-versions = "^3.10"
 files = []
 develop = false
 
@@ -515,7 +527,7 @@ tqdm = "*"
 type = "git"
 url = "https://github.com/SebasCrucer/clipvid.git"
 reference = "HEAD"
-resolved_reference = "84f9d5e5a520cfde34024bc4390d87f0a5509693"
+resolved_reference = "ad7068d3d9823cfe11427aece27cffa945ff0450"
 
 [[package]]
 name = "colorama"
@@ -1966,6 +1978,9 @@ files = [
     {file = "multidict-6.1.0.tar.gz", hash = "sha256:22ae2ebf9b0c69d206c003e2f6a914ea33f0a932d4aa16f236afc049d9958f4a"},
 ]
 
+[package.dependencies]
+typing-extensions = {version = ">=4.1.0", markers = "python_version < \"3.11\""}
+
 [[package]]
 name = "networkx"
 version = "3.4.2"
@@ -2315,8 +2330,10 @@ files = [
 
 [package.dependencies]
 numpy = [
-    {version = ">=1.26.0", markers = "python_version >= \"3.12\""},
+    {version = ">=1.21.4", markers = "python_version >= \"3.10\" and platform_system == \"Darwin\" and python_version < \"3.11\""},
+    {version = ">=1.21.2", markers = "platform_system != \"Darwin\" and python_version >= \"3.10\" and python_version < \"3.11\""},
     {version = ">=1.23.5", markers = "python_version >= \"3.11\" and python_version < \"3.12\""},
+    {version = ">=1.26.0", markers = "python_version >= \"3.12\""},
 ]
 
 [[package]]
@@ -2410,8 +2427,9 @@ files = [
 
 [package.dependencies]
 numpy = [
-    {version = ">=1.26.0", markers = "python_version >= \"3.12\""},
+    {version = ">=1.22.4", markers = "python_version < \"3.11\""},
     {version = ">=1.23.2", markers = "python_version == \"3.11\""},
+    {version = ">=1.26.0", markers = "python_version >= \"3.12\""},
 ]
 python-dateutil = ">=2.8.2"
 pytz = ">=2020.1"
@@ -3199,6 +3217,7 @@ files = [
 [package.dependencies]
 markdown-it-py = ">=2.2.0"
 pygments = ">=2.13.0,<3.0.0"
+typing-extensions = {version = ">=4.0.0,<5.0", markers = "python_version < \"3.11\""}
 
 [package.extras]
 jupyter = ["ipywidgets (>=7.5.1,<9)"]
@@ -4570,5 +4589,5 @@ propcache = ">=0.2.0"
 
 [metadata]
 lock-version = "2.0"
-python-versions = "^3.11"
-content-hash = "14f519dab1c6585b7fecf170de9befb18c3af5373a05fc034d2d9a22327f8694"
+python-versions = "^3.10"
+content-hash = "35c6d78330e0a0221540193762395a5d7763e9d1a1c30b178336b3797748008c"
