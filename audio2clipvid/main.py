@@ -174,7 +174,7 @@ def ajustar_clip_vertical(clip: mp.VideoFileClip, target_w=1080, target_h=1920):
         x_center = new_w / 2
         x1 = x_center - (target_w / 2)
         x2 = x_center + (target_w / 2)
-        final_clip = scaled_clip.crop(x1=x1, y1=0, x2=x2, y2=new_h)
+        final_clip = scaled_clip.cropped(x1=x1, y1=0, x2=x2, y2=new_h)
     else:
         # O bien escalamos a 1080 de ancho y recortamos arriba/abajo si es necesario
         scaled_clip = clip.resized(width=target_w)
