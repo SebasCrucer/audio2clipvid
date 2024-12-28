@@ -193,7 +193,7 @@ def compose_segment_with_searcher(
 
         if clip.duration > clip_needed:
             # recortar
-            clip = clip.subclip(0, clip_needed)
+            clip = clip.subclipped(0, clip_needed)
 
         used_clips.append(clip)
         accumulated_duration += clip.duration
