@@ -67,8 +67,9 @@ def generate_video(
 
     # 6. Agregar el audio original
     audio_clip = mp.AudioFileClip(audio_path)
-    # Ajustamos la duración del audio al final del video si difieren.
-    final_video_clip = final_video_clip.set_audio(audio_clip)
+
+    new_audioclip = mp.CompositeAudioClip([audio_clip, mp.AudioFileClip(audio_path).subclipped(0, final_video_clip.duration)])
+    final_video_clip.audio = new_audioclip
 
     # 7. Guardar el video
     final_video_clip.write_videofile(output_video_path, fps=24, codec="libx264", audio_codec="aac")
