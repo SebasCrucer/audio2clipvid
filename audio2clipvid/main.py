@@ -23,6 +23,7 @@ def generate_video(
         audio_path (str): Ruta al archivo de audio.
         llm_function (Callable[[str], str]): Función que recibe texto en lenguaje natural y retorna un string respuesta.
         embeddings_folder (str): Ruta donde se encuentran los embeddings generados (para ClipVidSearcher).
+        videos_folder (str): Ruta donde se encuentran los videos (para ClipVidSearcher).
         output_video_path (str): Ruta de salida para el video final.
         device (str, optional): Dispositivo para WhisperX y para CLIP ("cuda" o "cpu"). Por defecto, detecta automáticamente.
     """
