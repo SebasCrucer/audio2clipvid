@@ -12,7 +12,8 @@ def generate_video(
         embeddings_folder: str,
         videos_folder: str,
         output_video_path: str,
-        device: str = None
+        device: str = None,
+        max_segment_words: int = 40
 ):
     """
     Convierte un audio en un video usando WhisperX para extraer timestamps por palabra,
@@ -26,6 +27,7 @@ def generate_video(
         videos_folder (str): Ruta donde se encuentran los videos (para ClipVidSearcher).
         output_video_path (str): Ruta de salida para el video final.
         device (str, optional): Dispositivo para WhisperX y para CLIP ("cuda" o "cpu"). Por defecto, detecta automáticamente.
+        max_segment_words (int, optional): Máximo de palabras por segmento. Por defecto, 40.
     """
 
     if device is None:
@@ -35,7 +37,7 @@ def generate_video(
     transcribed_text, word_timestamps = transcribe_audio_with_whisperx(audio_path, device=device)
 
     # 2. Con la función lambda (llm_function), fragmentar el script
-    splitted_fragments = split_script_into_fragments(transcribed_text, llm_function)
+    splitted_fragments = split_script_into_fragments(transcribed_text, llm_function, max_words=max_segment_words)
 
     # 3. Generar descripciones cortas para cada fragmento
     short_descriptions = []
@@ -155,36 +157,37 @@ def compute_fragment_time_ranges(
     return fragment_time_ranges
 
 
+from moviepy.video.fx import Resize, Crop
+
 def ajustar_clip_vertical(clip, target_w=1080, target_h=1920):
-    """
-    Ajusta un clip al formato vertical 1080x1920
-    (por ejemplo para Reels o TikTok).
-    """
     cw, ch = clip.size
     target_ratio = target_w / target_h
     clip_ratio = cw / ch
 
-    # Si el clip es más ancho que el ratio 9:16, recortamos los lados
     if clip_ratio > target_ratio:
-        scaled_clip = clip.resize(height=target_h)
+        # Escalamos por alto
+        scaled_clip = clip.fx(Resize, height=target_h)
         new_w, new_h = scaled_clip.size
-        # Centrar y recortar
+        # Recortamos ancho sobrante
         x_center = new_w / 2
         x1 = x_center - (target_w / 2)
         x2 = x_center + (target_w / 2)
         final_clip = scaled_clip.crop(x1=x1, y1=0, x2=x2, y2=new_h)
+
     else:
-        # O bien escalamos a 1080 de ancho y recortamos arriba/abajo si es necesario
-        scaled_clip = clip.resize(width=target_w)
+        # Escalamos por ancho
+        scaled_clip = clip.fx(Resize, width=target_w)
         new_w, new_h = scaled_clip.size
         if new_h > target_h:
+            # Recortamos alto sobrante
             y_center = new_h / 2
             y1 = y_center - (target_h / 2)
             y2 = y_center + (target_h / 2)
             final_clip = scaled_clip.crop(x1=0, y1=y1, x2=new_w, y2=y2)
         else:
-            # Si queda más pequeño, estirar a fuerza
-            final_clip = scaled_clip.resize((target_w, target_h))
+            # Si quedó pequeño, estirar forzado
+            final_clip = scaled_clip.fx(Resize, newsize=(target_w, target_h))
+
     return final_clip
 
 
