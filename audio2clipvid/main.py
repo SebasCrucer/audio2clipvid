@@ -90,9 +90,12 @@ def transcribe_audio_with_whisperx(audio_path: str, device: str = "cpu"):
     """
     model = whisperx.load_model("small", device=device)
     audio = whisperx.load_audio(audio_path)
+
     result = model.transcribe(audio)
-    # Alinear con whisperx
-    result_aligned = whisperx.align(result["segments"], model, audio, device=device)
+
+    model_a, metadata = whisperx.load_align_model(language_code=result["language"], device=device)
+    result_aligned = whisperx.align(result["segments"], model_a, metadata, audio_path, device,
+                            return_char_alignments=False)
 
     # Reconstruir el texto completo y extraer timestamps palabra por palabra
     word_timestamps = []
