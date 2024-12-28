@@ -1,8 +1,7 @@
 import os
 import whisperx
 import torch
-import moviepy.editor as mp
-from moviepy.editor import VideoFileClip, AudioFileClip, concatenate_videoclips, ColorClip
+import moviepy as mp
 from typing import Callable, List, Tuple
 from clipvid import ClipVidSearcher
 
@@ -67,10 +66,10 @@ def generate_video(
         segment_clips.append(clip_segment)
 
     # 6. Concatenar todos los clips
-    final_video_clip = concatenate_videoclips(segment_clips, method="compose")
+    final_video_clip = mp.concatenate_videoclips(segment_clips, method="compose")
 
     # 7. Agregar el audio original
-    audio_clip = AudioFileClip(audio_path)
+    audio_clip = mp.AudioFileClip(audio_path)
 
     # Si por algún motivo el total de los videos excede la duración del audio,
     # podemos forzar a que el clip final coincida con la duración del audio:
@@ -232,7 +231,7 @@ def compose_segment_with_searcher(
         # Registrar como usado si queremos evitar duplicados
         used_videos.add(video_path)
 
-        clip = VideoFileClip(video_path)
+        clip = mp.VideoFileClip(video_path)
 
         # Ajustar a 1080x1920
         clip = ajustar_clip_vertical(clip, target_w, target_h)
@@ -247,13 +246,13 @@ def compose_segment_with_searcher(
 
     # Si no se encontró nada o no se pudo cubrir la duración
     if not used_clips:
-        filler_clip = ColorClip(size=(target_w, target_h), color=(0, 0, 0), duration=duration)
+        filler_clip = mp.ColorClip(size=(target_w, target_h), color=(0, 0, 0), duration=duration)
         return filler_clip
 
     # Concatenamos
     if len(used_clips) == 1:
         final_clip = used_clips[0]
     else:
-        final_clip = concatenate_videoclips(used_clips, method="compose")
+        final_clip = mp.concatenate_videoclips(used_clips, method="compose")
 
     return final_clip
