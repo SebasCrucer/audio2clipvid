@@ -79,7 +79,7 @@ def generate_video(
         final_video_clip = final_video_clip.subclipped(0, audio_clip.duration)
 
     # Asignar el audio ya recortado
-    final_video_clip = final_video_clip.set_audio(audio_clip)
+    final_video_clip.audio = audio_clip
 
     # 8. Guardar el video
     final_video_clip.write_videofile(output_video_path, fps=24, codec="libx264", audio_codec="aac")
