@@ -157,37 +157,36 @@ def compute_fragment_time_ranges(
     return fragment_time_ranges
 
 
-from moviepy.video.fx import Resize, Crop
-
-def ajustar_clip_vertical(clip, target_w=1080, target_h=1920):
+def ajustar_clip_vertical(clip: mp.VideoFileClip, target_w=1080, target_h=1920):
+    """
+    Ajusta un clip al formato vertical 1080x1920
+    (por ejemplo para Reels o TikTok).
+    """
     cw, ch = clip.size
     target_ratio = target_w / target_h
     clip_ratio = cw / ch
 
+    # Si el clip es más ancho que el ratio 9:16, recortamos los lados
     if clip_ratio > target_ratio:
-        # Escalamos por alto
-        scaled_clip = clip.fx(Resize, height=target_h)
+        scaled_clip = clip.resized(height=target_h)
         new_w, new_h = scaled_clip.size
-        # Recortamos ancho sobrante
+        # Centrar y recortar
         x_center = new_w / 2
         x1 = x_center - (target_w / 2)
         x2 = x_center + (target_w / 2)
         final_clip = scaled_clip.crop(x1=x1, y1=0, x2=x2, y2=new_h)
-
     else:
-        # Escalamos por ancho
-        scaled_clip = clip.fx(Resize, width=target_w)
+        # O bien escalamos a 1080 de ancho y recortamos arriba/abajo si es necesario
+        scaled_clip = clip.resized(width=target_w)
         new_w, new_h = scaled_clip.size
         if new_h > target_h:
-            # Recortamos alto sobrante
             y_center = new_h / 2
             y1 = y_center - (target_h / 2)
             y2 = y_center + (target_h / 2)
             final_clip = scaled_clip.crop(x1=0, y1=y1, x2=new_w, y2=y2)
         else:
-            # Si quedó pequeño, estirar forzado
-            final_clip = scaled_clip.fx(Resize, newsize=(target_w, target_h))
-
+            # Si queda más pequeño, estirar a fuerza
+            final_clip = scaled_clip.resized((target_w, target_h))
     return final_clip
 
 
