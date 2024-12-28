@@ -175,7 +175,14 @@ def compose_segment_with_searcher(
         video_name, _ = results[idx]
         # Si `video_name` no es la ruta, ajusta la lógica para armar la ruta real
         # p.ej: video_path = os.path.join("videos", f"{video_name}.mp4")
+
+        # Debug prints:
+        print("Resultados CLIP:", video_name)
+
         video_path = video_name if video_name.endswith(".mp4") else f"{video_name}.mp4"
+        print("Intentando cargar:", video_path)
+        print("Existe?", os.path.exists(video_path))
+
         idx += 1
 
         if not os.path.exists(video_path):
