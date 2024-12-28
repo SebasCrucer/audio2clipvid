@@ -76,7 +76,7 @@ def generate_video(
     # Si por algún motivo el total de los videos excede la duración del audio,
     # podemos forzar a que el clip final coincida con la duración del audio:
     if final_video_clip.duration > audio_clip.duration:
-        final_video_clip = final_video_clip.subclip(0, audio_clip.duration)
+        final_video_clip = final_video_clip.subclipped(0, audio_clip.duration)
 
     # Asignar el audio ya recortado
     final_video_clip = final_video_clip.set_audio(audio_clip)
@@ -241,7 +241,7 @@ def compose_segment_with_searcher(
         clip_needed = duration - accumulated_duration
         if clip.duration > clip_needed:
             # recortar la parte que nos falta
-            clip = clip.subclip(0, clip_needed)
+            clip = clip.subclipped(0, clip_needed)
 
         used_clips.append(clip)
         accumulated_duration += clip.duration
