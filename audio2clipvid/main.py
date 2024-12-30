@@ -21,6 +21,7 @@ def generate_video(
 
     - Si el LLM devuelve más palabras de las que realmente existen en la transcripción,
       truncamos o removemos los fragmentos sobrantes (para evitar IndexError).
+    - Extendemos cada fragmento hasta el inicio del siguiente fragmento (para no dejar huecos).
     - Añadimos un fragmento FILLER para cubrir el silencio final, si lo hay.
     """
 
@@ -65,7 +66,7 @@ def generate_video(
     audio_duration = audio_clip.duration
     print(f"[generate_video] Duración del audio: {audio_duration} segundos")
 
-    # 6. Calcular rangos de tiempo, añadiendo un fragmento FILLER si sobra audio
+    # 6. Calcular rangos de tiempo con extensión hasta el siguiente fragmento
     print("[generate_video] Calculando rangos de tiempo para cada fragmento...")
     fragment_time_ranges = compute_fragment_time_ranges(
         word_timestamps,
@@ -117,7 +118,7 @@ def generate_video(
     print("[generate_video] Concatenando todos los fragmentos de video...")
     final_video_clip = mp.concatenate_videoclips(segment_clips, method="compose")
 
-    # 11. Asignar el audio original (no lo recortamos, pues cubrimos el silencio con FILLER)
+    # 11. Asignar el audio original (no lo recortamos, pues cubrimos cualquier silencio con FILLER o con extensión)
     print("[generate_video] Asignando audio original al video concatenado...")
     final_video_clip.audio = audio_clip
 
@@ -235,7 +236,7 @@ def adjust_fragments_to_whisperx(fragments: List[str], word_timestamps: List[Tup
       para garantizar la validez de timestamps.
 
     - Si hay menos palabras de las que detectó WhisperX, NO hacemos nada especial,
-      porque ya cubriremos eso con un eventual FILLER de silencio si hace falta.
+      pues se cubre con FILLER o extensión final en compute_fragment_time_ranges.
     """
     print("[adjust_fragments_to_whisperx] INICIO")
     total_whisperx_words = len(word_timestamps)
@@ -285,10 +286,11 @@ def compute_fragment_time_ranges(
 ):
     """
     Dado el array (palabra, start, end) y la lista de fragmentos (ajustada para no exceder),
-    asigna rangos de tiempo a cada fragmento (start_time, end_time).
+    asigna rangos de tiempo a cada fragmento (start_time, end_time), **extendiendo** cada uno
+    hasta el inicio del siguiente para evitar huecos.
 
-    Además, si sobra tiempo después de la última palabra, añadimos
-    un fragmento "FILLER" para cubrir [última_palabra, fin_audio].
+    Además, si sobra tiempo después del último fragmento, añadimos
+    un fragmento "FILLER" para cubrir [fin_último_fragmento, fin_audio].
     """
     print("[compute_fragment_time_ranges] INICIO")
     print(f"[compute_fragment_time_ranges] Cantidad de word_timestamps: {len(word_timestamps)}")
@@ -298,10 +300,12 @@ def compute_fragment_time_ranges(
     fragment_time_ranges = []
     index_palabra = 0
 
-    # 1) Calcular rangos de tiempo para cada fragmento "hablado"
+    # Recorremos los fragments, pero debemos ver si hay un siguiente fragment
+    # para extender el end_time. Guardamos primero el "start_time" del fragment actual
+    # y luego calculamos el "start_time" del siguiente fragment para cerrar la brecha.
     for i, fragment in enumerate(fragments):
         if fragment == "FILLER":
-            # Ignoramos aquí, lo manejamos al final si hace falta
+            # Ignoramos aquí, se maneja al final si hace falta
             continue
 
         word_count = len(fragment.split())
@@ -309,31 +313,62 @@ def compute_fragment_time_ranges(
             print(f"[compute_fragment_time_ranges] Fragmento {i} vacío, se omite.")
             continue
 
+        # 1) Start_time de este fragmento => start de su primera palabra
         start_time = word_timestamps[index_palabra][1]
-        end_time = word_timestamps[index_palabra + word_count - 1][2]
-        fragment_time_ranges.append((start_time, end_time))
-        print(f"[compute_fragment_time_ranges] Rango para fragmento {i}: start={start_time}, end={end_time}, word_count={word_count}")
 
+        # 2) Miramos si hay un siguiente fragmento 'hablado' (no FILLER, no vacío).
+        #    Si lo hay, el end_time de este fragmento será el start_time de la primera palabra
+        #    de ese fragmento. Así cubrimos los silencios intermedios.
+        #    Si NO lo hay, el end_time será la última palabra de ESTE fragmento.
+        next_frag_index = find_next_nonfiller_fragment(fragments, i+1)
+        if next_frag_index is not None:
+            # El end_time de este fragmento es el start_time de la primera palabra
+            # de ese "siguiente fragmento".
+            next_word_count = len(fragments[next_frag_index].split())
+
+            # Este fragmento abarca 'word_count' palabras a partir de index_palabra,
+            # el siguiente empieza en index_palabra + word_count
+            # (si no nos salimos de la lista de word_timestamps).
+            next_fragment_first_word_idx = index_palabra + word_count
+            if next_fragment_first_word_idx < len(word_timestamps):
+                end_time = word_timestamps[next_fragment_first_word_idx][1]
+            else:
+                # En caso de que no haya más palabras, lo llevamos hasta su última palabra.
+                end_time = word_timestamps[index_palabra + word_count - 1][2]
+        else:
+            # No hay siguiente fragmento 'hablado'. Tomamos la última palabra de ESTE.
+            end_time = word_timestamps[index_palabra + word_count - 1][2]
+
+        fragment_time_ranges.append((start_time, end_time))
+
+        # Aumentamos el índice para el siguiente
         index_palabra += word_count
 
-    # 2) Averiguar fin de la última palabra
-    if fragment_time_ranges:
-        last_fragment_end = fragment_time_ranges[-1][1]
-    else:
-        # caso extremo: no había palabras
-        last_fragment_end = 0.0
+    # Comprobamos hasta dónde llegamos con el último fragmento
+    last_range_end = fragment_time_ranges[-1][1] if fragment_time_ranges else 0.0
 
-    # 3) Si la duración del audio es mayor al fin de la última palabra, añadimos un FILLER
-    if audio_duration > last_fragment_end:
-        # Agregamos el "FILLER" en la lista de fragments si aún no existe
+    # Si la duración del audio es mayor que el fin del último fragmento, añadimos FILLER
+    if audio_duration > last_range_end:
+        # Si no existe FILLER al final, lo añadimos
         if not fragments or fragments[-1] != "FILLER":
             print("[compute_fragment_time_ranges] Añadiendo FILLER al final de la lista de fragments.")
             fragments.append("FILLER")
-        fragment_time_ranges.append((last_fragment_end, audio_duration))
-        print(f"[compute_fragment_time_ranges] Rango FILLER: start={last_fragment_end}, end={audio_duration}")
+        fragment_time_ranges.append((last_range_end, audio_duration))
+        print(f"[compute_fragment_time_ranges] Rango FILLER: start={last_range_end}, end={audio_duration}")
 
     print("[compute_fragment_time_ranges] FIN")
     return fragment_time_ranges
+
+
+def find_next_nonfiller_fragment(fragments: List[str], start_idx: int) -> int:
+    """
+    Dado un índice de inicio, busca el siguiente fragmento
+    que no sea "FILLER" ni esté vacío. Retorna el índice o None si no hay.
+    """
+    for i in range(start_idx, len(fragments)):
+        if fragments[i] != "FILLER" and len(fragments[i].split()) > 0:
+            return i
+    return None
 
 
 def ajustar_clip_vertical(clip: mp.VideoFileClip, target_w=1080, target_h=1920):
