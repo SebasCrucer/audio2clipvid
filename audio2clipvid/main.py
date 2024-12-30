@@ -16,41 +16,47 @@ def generate_video(
 ):
     """
     Convierte un audio en un video usando WhisperX para extraer timestamps por palabra,
-    una función (lambda) para fragmentar el texto y generar descripciones, y ClipVidSearcher
-    para buscar y componer clips.
+    una función (lambda) LLM para fragmentar el texto en ideas completas y generar descripciones,
+    y ClipVidSearcher para buscar y componer clips.
 
-    Args:
-        audio_path (str): Ruta al archivo de audio.
-        llm_function (Callable[[str], str]): Función LLM que recibe texto y retorna un string de respuesta.
-        embeddings_folder (str): Ruta donde se encuentran los embeddings generados (para ClipVidSearcher).
-        videos_folder (str): Ruta donde se encuentran los videos (para ClipVidSearcher).
-        output_video_path (str): Ruta de salida para el video final.
-        device (str, optional): "cuda" o "cpu". Si no se especifica, lo detecta.
-        max_segment_words (int, optional): Máximo de palabras por fragmento. Por defecto, 40.
+    - Si el LLM devuelve más palabras de las que realmente existen en la transcripción,
+      truncamos o removemos los fragmentos sobrantes (para evitar IndexError).
+    - Añadimos un fragmento FILLER para cubrir el silencio final, si lo hay.
     """
 
-    # 1. Determinar dispositivo
+    # 1. Determinar dispositivo (CPU o GPU)
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # 2. Transcribir audio con WhisperX
     transcribed_text, word_timestamps = transcribe_audio_with_whisperx(audio_path, device=device)
 
-    # 3. Dividir el texto en fragmentos con llm_function
-    splitted_fragments = split_script_into_fragments(transcribed_text, llm_function, max_words=max_segment_words)
+    # 3. Dividir el texto en fragmentos con el LLM
+    #    (El LLM intenta crear ideas completas. Luego ajustaremos si excede la cantidad real de palabras.)
+    splitted_fragments = split_script_into_fragments(
+        transcribed_text,
+        llm_function,
+        max_words=max_segment_words
+    )
 
-    # 4. Cargar el audio completo y medir duración
+    # 4. Ajustar fragmentos para NO exceder las palabras totales de whisperx
+    splitted_fragments = adjust_fragments_to_whisperx(
+        splitted_fragments,
+        word_timestamps
+    )
+
+    # 5. Cargar el audio completo y medir duración
     audio_clip = mp.AudioFileClip(audio_path)
     audio_duration = audio_clip.duration
 
-    # 5. Calcular rangos de tiempo, añadiendo un fragmento FILLER si sobra audio
+    # 6. Calcular rangos de tiempo, añadiendo un fragmento FILLER si sobra audio
     fragment_time_ranges = compute_fragment_time_ranges(
         word_timestamps,
         splitted_fragments,
         audio_duration
     )
 
-    # 6. Generar una descripción corta para cada fragmento (incluyendo el FILLER)
+    # 7. Generar descripción corta para cada fragmento (incluyendo FILLER)
     short_descriptions = []
     for fragment in splitted_fragments:
         if fragment == "FILLER":
@@ -63,35 +69,34 @@ def generate_video(
             desc = llm_function(prompt_desc)
         short_descriptions.append(desc.strip())
 
-    # 7. Crear el buscador de videos con ClipVidSearcher
+    # 8. Crear el buscador de videos con ClipVidSearcher
     searcher = ClipVidSearcher(
         embeddings_folder=embeddings_folder,
         videos_folder=videos_folder,
         device=device
     )
 
-    # 8. Para cada fragmento y descripción, generar un clip que cubra su duración
+    # 9. Para cada fragmento y descripción, generar un clip que cubra su duración
     segment_clips = []
     used_videos = set()
 
     for (frag, desc), (start, end) in zip(zip(splitted_fragments, short_descriptions), fragment_time_ranges):
         required_duration = end - start
-        # Generar el video que cubre este rango
         clip_segment = compose_segment_with_searcher(
             searcher=searcher,
             description=desc,
             duration=required_duration,
-            used_videos=used_videos,  # Para no repetir videos
+            used_videos=used_videos,
         )
         segment_clips.append(clip_segment)
 
-    # 9. Concatenar los clips de todos los fragmentos
+    # 10. Concatenar los clips de todos los fragmentos
     final_video_clip = mp.concatenate_videoclips(segment_clips, method="compose")
 
-    # 10. Asignar el audio original completo (NOTA: no recortamos audio, pues tenemos FILLER)
+    # 11. Asignar el audio original (no lo recortamos, pues cubrimos el silencio con FILLER)
     final_video_clip.audio = audio_clip
 
-    # 11. Exportar el video
+    # 12. Exportar el video
     final_video_clip.write_videofile(
         output_video_path,
         fps=24,
@@ -99,7 +104,7 @@ def generate_video(
         audio_codec="aac"
     )
 
-    # 12. Cerrar recursos
+    # 13. Cerrar recursos
     final_video_clip.close()
     audio_clip.close()
     for sc in segment_clips:
@@ -114,21 +119,20 @@ def transcribe_audio_with_whisperx(audio_path: str, device: str = "cpu"):
       - El texto completo transcrito
       - Una lista con (palabra, start_time, end_time)
     """
-    # Cargar modelo
     model = whisperx.load_model("small", device=device)
     audio = whisperx.load_audio(audio_path)
 
     # Transcribir
     result = model.transcribe(audio)
 
-    # Alinear
+    # Alinear las palabras con timestamps
     model_a, metadata = whisperx.load_align_model(language_code=result["language"], device=device)
     result_aligned = whisperx.align(
         result["segments"], model_a, metadata, audio_path, device,
         return_char_alignments=False
     )
 
-    # Reconstruir texto y extraer timestamps por palabra
+    # Reconstruir texto y extraer timestamps
     word_timestamps = []
     all_text = []
     for seg in result_aligned["segments"]:
@@ -143,16 +147,63 @@ def transcribe_audio_with_whisperx(audio_path: str, device: str = "cpu"):
 def split_script_into_fragments(full_text: str, llm_function: Callable[[str], str], max_words: int = 40):
     """
     Usa la función llm_function para generar la división del texto en fragmentos
-    de un cierto tamaño (en palabras).
+    de un cierto tamaño (en palabras), intentando agrupar ideas completas.
+
+    NOTA: El LLM podría devolver más (o menos) palabras que las reales,
+    así que luego debemos ajustar.
     """
     prompt = (
         f"Por favor divide el siguiente texto en fragmentos de alrededor de {max_words} palabras, "
-        f"intentando que cada fragmento represente una idea completa. Devuelve la lista de fragmentos, "
-        f"cada uno en una nueva línea.\n\n"
+        f"respetando las palabras lo más posible y devolviendo cada fragmento en una nueva línea.\n\n"
         f"Texto:\n{full_text}"
     )
     response = llm_function(prompt)
     fragments = [line.strip() for line in response.split("\n") if line.strip()]
+    return fragments
+
+
+def adjust_fragments_to_whisperx(fragments: List[str], word_timestamps: List[Tuple[str, float, float]]):
+    """
+    Ajusta la lista de fragmentos generados por el LLM para que NO excedan
+    la cantidad total de palabras que WhisperX detectó.
+
+    - Si sobran palabras, se recorta el último fragmento (o se elimina el fragmento completo)
+      para evitar IndexError. Esto podría truncar la idea final del LLM, pero se hace
+      para garantizar la validez de timestamps.
+
+    - Si hay menos palabras de las que detectó WhisperX, NO hacemos nada especial,
+      porque ya cubriremos eso con un eventual FILLER de silencio si hace falta.
+    """
+    total_whisperx_words = len(word_timestamps)
+
+    # Contar cuántas palabras totales devolvió el LLM
+    splitted_fragment_tokens = [frag.split() for frag in fragments]
+    all_llm_tokens = [token for tokens in splitted_fragment_tokens for token in tokens]
+    total_llm_words = len(all_llm_tokens)
+
+    # Si el LLM no excede, está todo bien
+    if total_llm_words <= total_whisperx_words:
+        return fragments
+
+    # Caso: LLM generó más palabras de las que existen => recortar
+    difference = total_llm_words - total_whisperx_words
+
+    # Trabajamos desde el último fragmento hacia atrás
+    i = len(fragments) - 1
+
+    while difference > 0 and i >= 0:
+        tokens = fragments[i].split()
+        if len(tokens) <= difference:
+            # Eliminar fragmento completo (pues excede)
+            fragments.pop(i)
+            difference -= len(tokens)
+            i -= 1
+        else:
+            # Quitar 'difference' tokens del final de ese fragmento
+            kept_tokens = tokens[:-difference]
+            fragments[i] = " ".join(kept_tokens)
+            difference = 0  # ya no necesitamos quitar más
+
     return fragments
 
 
@@ -162,7 +213,7 @@ def compute_fragment_time_ranges(
         audio_duration: float
 ):
     """
-    Dado el array (palabra, start, end) y la lista de fragmentos,
+    Dado el array (palabra, start, end) y la lista de fragmentos (ajustada para no exceder),
     asigna rangos de tiempo a cada fragmento (start_time, end_time).
 
     Además, si sobra tiempo después de la última palabra, añadimos
@@ -171,31 +222,35 @@ def compute_fragment_time_ranges(
     fragment_time_ranges = []
     index_palabra = 0
 
-    # 1) Calcular los rangos de tiempo para fragmentos "hablados"
-    for fragment in fragments:
-        # Si en algún caso tienes un "FILLER" ya metido antes, evita error:
+    # 1) Calcular rangos de tiempo para cada fragmento "hablado"
+    for i, fragment in enumerate(fragments):
         if fragment == "FILLER":
-            # Lo saltamos momentáneamente (esto se maneja más abajo)
+            # Ignoramos aquí, lo manejamos al final si hace falta
             continue
 
-        fragment_word_count = len(fragment.split())
-        fragment_start_time = word_timestamps[index_palabra][1]  # start
-        fragment_end_time = word_timestamps[index_palabra + fragment_word_count - 1][2]  # end
+        word_count = len(fragment.split())
+        if word_count == 0:
+            # Fragmento vacío, omitir
+            continue
 
-        fragment_time_ranges.append((fragment_start_time, fragment_end_time))
-        index_palabra += fragment_word_count
+        start_time = word_timestamps[index_palabra][1]
+        end_time = word_timestamps[index_palabra + word_count - 1][2]
+        fragment_time_ranges.append((start_time, end_time))
 
-    # 2) Determinar si hay más audio después de la última palabra
+        index_palabra += word_count
+
+    # 2) Averiguar fin de la última palabra
     if fragment_time_ranges:
         last_fragment_end = fragment_time_ranges[-1][1]
     else:
-        # Caso extremo si no hay palabras
+        # caso extremo: no había palabras
         last_fragment_end = 0.0
 
-    # 3) Si la duración del audio es mayor al end de la última palabra...
+    # 3) Si la duración del audio es mayor al fin de la última palabra, añadimos un FILLER
     if audio_duration > last_fragment_end:
-        # Añadimos un fragmento FILLER al final de la lista de "fragments"
-        fragments.append("FILLER")
+        # Agregamos el "FILLER" en la lista de fragments si aún no existe
+        if not fragments or fragments[-1] != "FILLER":
+            fragments.append("FILLER")
         fragment_time_ranges.append((last_fragment_end, audio_duration))
 
     return fragment_time_ranges
@@ -218,7 +273,7 @@ def ajustar_clip_vertical(clip: mp.VideoFileClip, target_w=1080, target_h=1920):
         x2 = x_center + (target_w / 2)
         final_clip = scaled_clip.crop(x1=x1, y1=0, x2=x2, y2=new_h)
     else:
-        # El clip es más alto o igual al ratio; escalamos por ancho y recortamos arriba/abajo si hace falta
+        # El clip es más alto o igual al ratio; escalamos por ancho y recortamos
         scaled_clip = clip.resize(width=target_w)
         new_w, new_h = scaled_clip.size
         if new_h > target_h:
@@ -227,7 +282,6 @@ def ajustar_clip_vertical(clip: mp.VideoFileClip, target_w=1080, target_h=1920):
             y2 = y_center + (target_h / 2)
             final_clip = scaled_clip.crop(x1=0, y1=y1, x2=new_w, y2=y2)
         else:
-            # Si aún así queda menor, lo estiramos del todo
             final_clip = scaled_clip.resize((target_w, target_h))
     return final_clip
 
@@ -242,21 +296,17 @@ def compose_segment_with_searcher(
 ) -> mp.VideoClip:
     """
     Usa el buscador ClipVidSearcher para encontrar uno o varios videos
-    que coincidan con `description`. Se concatena todo lo necesario
-    hasta cubrir `duration`.
-
-    - Si used_videos existe, se evita reutilizar un video ya usado.
-    - Ajusta cada clip a 9:16 con `ajustar_clip_vertical`.
+    que coincidan con `description`. Se concatenan hasta cubrir `duration`.
+    - Si used_videos existe, se evita reutilizar un video en distintos segmentos.
+    - Ajusta cada clip a 9:16 con ajustar_clip_vertical().
     - Recorta el último clip si excede la duración necesaria.
-    - Si no se encuentra nada, devuelve un ColorClip de relleno.
+    - Si no se encuentra nada, retorna un ColorClip de relleno.
     """
     if used_videos is None:
         used_videos = set()
 
-    # Buscamos top 10 videos
-    results = searcher.search(description, n=10)
-    # results es una lista de (similarity, index, video_path)
-
+    # Buscar top 10 videos
+    results = searcher.search(description, n=10)  # [(sim, idx, path), ...]
     used_clips = []
     accumulated_duration = 0.0
     idx = 0
@@ -266,14 +316,11 @@ def compose_segment_with_searcher(
         _, _, video_path = results[idx]
         idx += 1
 
-        # Si ya se usó, saltar
+        # Evitar duplicados
         if video_path in used_videos:
             continue
-
-        # Marcarlo como usado
         used_videos.add(video_path)
 
-        # Verificar que exista
         if not os.path.exists(video_path):
             continue
 
@@ -282,7 +329,6 @@ def compose_segment_with_searcher(
 
         clip_needed = duration - accumulated_duration
         if clip.duration > clip_needed:
-            # Recortamos la parte que sobre
             clip = clip.subclip(0, clip_needed)
 
         used_clips.append(clip)
