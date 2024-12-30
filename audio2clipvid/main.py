@@ -266,7 +266,7 @@ def ajustar_clip_vertical(clip: mp.VideoFileClip, target_w=1080, target_h=1920):
 
     if clip_ratio > target_ratio:
         # El clip es más ancho que 9:16; escalamos por altura y recortamos a los lados
-        scaled_clip = clip.resize(height=target_h)
+        scaled_clip = clip.resized(height=target_h)
         new_w, new_h = scaled_clip.size
         x_center = new_w / 2
         x1 = x_center - (target_w / 2)
@@ -274,7 +274,7 @@ def ajustar_clip_vertical(clip: mp.VideoFileClip, target_w=1080, target_h=1920):
         final_clip = scaled_clip.crop(x1=x1, y1=0, x2=x2, y2=new_h)
     else:
         # El clip es más alto o igual al ratio; escalamos por ancho y recortamos
-        scaled_clip = clip.resize(width=target_w)
+        scaled_clip = clip.resized(width=target_w)
         new_w, new_h = scaled_clip.size
         if new_h > target_h:
             y_center = new_h / 2
