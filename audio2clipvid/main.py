@@ -91,22 +91,33 @@ def transcribe_audio_with_whisperx(audio_path: str, device: str = "cpu"):
       - El texto completo transcrito
       - Una lista con (palabra, start_time, end_time)
     """
+    print("[transcribe_audio_with_whisperx] INICIO")
+    print(f"[transcribe_audio_with_whisperx] Parámetros:\n  audio_path={audio_path}\n  device={device}")
 
     model = whisperx.load_model("small", device=device)
+    print("[transcribe_audio_with_whisperx] Modelo WhisperX cargado (small).")
 
     audio = whisperx.load_audio(audio_path)
+    print("[transcribe_audio_with_whisperx] Audio cargado para transcripción.")
 
     # Transcribir
+    print("[transcribe_audio_with_whisperx] Iniciando transcripción...")
     result = model.transcribe(audio)
+    print("[transcribe_audio_with_whisperx] Transcripción base finalizada.")
 
     # Alinear las palabras con timestamps
+    print("[transcribe_audio_with_whisperx] Cargando modelo de alineación...")
     model_a, metadata = whisperx.load_align_model(language_code=result["language"], device=device)
+    print("[transcribe_audio_with_whisperx] Modelo de alineación cargado.")
+
+    print("[transcribe_audio_with_whisperx] Alineando segmentos para obtener timestamps de palabras...")
     result_aligned = whisperx.align(
         result["segments"], model_a, metadata, audio_path, device,
         return_char_alignments=False
     )
 
     # Reconstruir texto y extraer timestamps
+    print("[transcribe_audio_with_whisperx] Reconstruyendo texto y extrayendo timestamps de palabras...")
     word_timestamps = []
     all_text = []
     for seg in result_aligned["segments"]:
@@ -115,6 +126,11 @@ def transcribe_audio_with_whisperx(audio_path: str, device: str = "cpu"):
             all_text.append(w["word"])
 
     transcript_text = " ".join(all_text)
+    print("[transcribe_audio_with_whisperx] INICIO - Texto transcrito completo:")
+    print(transcript_text)
+    print("[transcribe_audio_with_whisperx] FIN - Texto transcrito completo")
+    print(f"[transcribe_audio_with_whisperx] Cantidad de palabras detectadas: {len(word_timestamps)}")
+    print("[transcribe_audio_with_whisperx] FIN")
 
     return transcript_text, word_timestamps
 
