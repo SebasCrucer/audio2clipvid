@@ -87,21 +87,26 @@ def generate_video(
 
 def transcribe_audio_with_whisperx(audio_path: str, device: str = "cpu"):
     """
-    Transcribe un audio usando WhisperX y retorna:
-      - Texto completo.
-      - Lista de (palabra, start_time, end_time).
+    Transcribe el audio usando WhisperX y retorna:
+      - El texto completo transcrito
+      - Una lista con (palabra, start_time, end_time)
     """
+
     model = whisperx.load_model("small", device=device)
+
     audio = whisperx.load_audio(audio_path)
+
+    # Transcribir
     result = model.transcribe(audio)
 
-    # Alinear palabras
-    align_model, metadata = whisperx.load_align_model(language_code=result["language"], device=device)
+    # Alinear las palabras con timestamps
+    model_a, metadata = whisperx.load_align_model(language_code=result["language"], device=device)
     result_aligned = whisperx.align(
-        result["segments"], align_model, metadata, audio_path, device, return_char_alignments=False
+        result["segments"], model_a, metadata, audio_path, device,
+        return_char_alignments=False
     )
 
-    # Construir texto y timestamps
+    # Reconstruir texto y extraer timestamps
     word_timestamps = []
     all_text = []
     for seg in result_aligned["segments"]:
@@ -109,7 +114,9 @@ def transcribe_audio_with_whisperx(audio_path: str, device: str = "cpu"):
             word_timestamps.append((w["word"], w["start"], w["end"]))
             all_text.append(w["word"])
 
-    return " ".join(all_text), word_timestamps
+    transcript_text = " ".join(all_text)
+
+    return transcript_text, word_timestamps
 
 
 def split_script_into_fragments(
