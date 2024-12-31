@@ -121,6 +121,7 @@ def transcribe_audio_with_whisperx(audio_path: str, device: str = "cpu"):
     word_timestamps = []
     all_text = []
     for seg in result_aligned["segments"]:
+        print(f"[segment] start={seg}")
         for w in seg["words"]:
             word_timestamps.append((w["word"], w["start"], w["end"]))
             all_text.append(w["word"])
